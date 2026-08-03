@@ -1,0 +1,25 @@
+{
+  "boards": [
+    "SportLottery"
+  ],
+  "interval_seconds": 60,
+  "board_delay_seconds": 1.5,
+  "skip_reply": false,
+  "title_include": [],
+  "title_exclude": [],
+  "ntfy": {
+    "server": "https://ntfy.sh",
+    "priority": 4,
+    "tags": [
+      "loudspeaker"
+    ],
+    "token": "",
+    "topic": "請改成你自己的隨機字串（雲端實際用的是 Secrets，這裡不用改）"
+  },
+  "authors": [
+    "b032819",
+    "bvbin10242",
+    "lotterywin"
+  ],
+  "watch_comments": true
+}
