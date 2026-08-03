@@ -1,0 +1,56 @@
+name: PTT Watcher
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"     # 每 5 分鐘啟動一次（GitHub 的最小間隔）
+  workflow_dispatch:          # 也可以在 Actions 頁面手動觸發
+
+permissions:
+  contents: write             # 需要寫回 seen.json 來記住進度
+
+# 每次執行跑約 13 分鐘（比 5 分鐘的啟動間隔長），所以下一次啟動會排隊等前一次跑完，
+# 一結束就無縫接手。單次拉長是為了減少「換手」次數——每次換手要重新開機約
+# 1~2 分鐘，那段時間是通知空窗，換手越少空窗越少。
+concurrency:
+  group: ptt-watcher          # 避免兩輪同時跑造成重複通知
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 掃描 PTT（跑滿 13 分鐘，每輪對齊 60 秒）
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+          PTT_AUTHORS: ${{ secrets.PTT_AUTHORS }}
+        run: |
+          START=$SECONDS
+          while [ $((SECONDS - START)) -lt 780 ]; do
+            ROUND=$SECONDS
+            python ptt_watcher.py --once || true   # 單輪失敗不中斷，下一輪自然重試
+            COST=$((SECONDS - ROUND))
+            # 一輪不到 60 秒就補睡到滿 60 秒；超過 60 秒（例如完整掃描）就
+            # 直接接著跑下一輪，不再另外多睡把節奏拖慢
+            if [ $COST -lt 60 ]; then sleep $((60 - COST)); fi
+          done
+
+      - name: 記住已通知的文章
+        if: always()            # 就算上面有一輪失敗，也要把已通知紀錄存回去，避免重複通知
+        run: |
+          git config user.name "ptt-watcher"
+          git config user.email "actions@users.noreply.github.com"
+          git pull --rebase --autostash || true
+          git add seen.json
+          git diff --staged --quiet || git commit -m "chore: update seen state"
+          git push
